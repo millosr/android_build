@@ -86,6 +86,12 @@ Usage:  ota_from_target_files [flags] input_target_files output_ota_package
       Do not generate recovery image. For devices which do not have a truly
       separate recovery partition.
 
+  --multiple_boot <list>
+      List of boot.img files separated by comma
+
+  --multiple_boot_scripts <path>      flash
+      Path to customota.boot and customota.prep to handle multiple boot
+
 """
 
 import sys
@@ -134,6 +140,8 @@ OPTIONS.oem_source = None
 OPTIONS.fallback_to_full = True
 OPTIONS.override_device = 'auto'
 OPTIONS.no_separate_recovery = False
+OPTIONS.multiple_boot = None
+OPTIONS.multiple_boot_scripts = None
 
 def MostPopularKey(d, default):
   """Given a dict, return the key corresponding to the largest
@@ -590,15 +598,16 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
     symlinks = CopyPartitionFiles(system_items, input_zip, output_zip)
     script.MakeSymlinks(symlinks)
 
-  boot_img = common.GetBootableImage("boot.img", "boot.img",
-                                     OPTIONS.input_tmp, "BOOT")
+  if OPTIONS.multiple_boot is None:
+    boot_img = common.GetBootableImage("boot.img", "boot.img",
+                                       OPTIONS.input_tmp, "BOOT")
 
   if not block_based:
     def output_sink(fn, data):
       common.ZipWriteStr(output_zip, "recovery/" + fn, data)
       system_items.Get("system/" + fn, dir=False)
 
-    if not OPTIONS.no_separate_recovery:
+    if not OPTIONS.no_separate_recovery and OPTIONS.multiple_boot is None:
       common.MakeRecoveryPatch(OPTIONS.input_tmp, output_sink,
                              recovery_img, boot_img)
 
@@ -625,11 +634,24 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
       vendor_items.GetMetadata(input_zip)
       vendor_items.Get("vendor").SetPermissions(script)
 
-  common.CheckSize(boot_img.data, "boot.img", OPTIONS.info_dict)
-  common.ZipWriteStr(output_zip, "boot.img", boot_img.data)
-
+  if OPTIONS.multiple_boot is None:
+    common.CheckSize(boot_img.data, "boot.img", OPTIONS.info_dict)
+    common.ZipWriteStr(output_zip, "boot.img", boot_img.data)
+  else:
+    for boot_file in OPTIONS.multiple_boot:
+      boot_img = common.GetBootableImage(boot_file, boot_file,
+                                         OPTIONS.input_tmp, "BOOT")
+      common.CheckSize(boot_img.data, "boot.img", OPTIONS.info_dict)
+      common.ZipWriteStr(output_zip, boot_file, boot_img.data)
+      
   script.ShowProgress(0.05, 5)
-  script.WriteRawImage("/boot", "boot.img")
+  
+  if OPTIONS.multiple_boot is None:
+    script.WriteRawImage("/boot", "boot.img")
+  else:
+    if OPTIONS.multiple_boot_scripts is not None:
+      script.AppendExtra(open(OPTIONS.multiple_boot_scripts + "/customota.boot").read())
+      common.ZipWriteStr(output_zip, "install-prep.sh", open(OPTIONS.multiple_boot_scripts + "/customota.prep").read())
 
   script.ShowProgress(0.2, 10)
   device_specific.FullOTA_InstallEnd()
@@ -1440,6 +1462,10 @@ def main(argv):
       OPTIONS.override_device = a
     elif o in ("--no_separate_recovery"):
       OPTIONS.no_separate_recovery = bool(a.lower() == 'true')
+    elif o in ("--multiple_boot"):
+      OPTIONS.multiple_boot = a.split(',')
+    elif o in ("--multiple_boot_scripts"):
+      OPTIONS.multiple_boot_scripts = a
     else:
       return False
     return True
@@ -1463,6 +1489,8 @@ def main(argv):
                                               "no_fallback_to_full",
                                               "override_device=",
                                               "no_separate_recovery=",
+                                              "multiple_boot=",
+                                              "multiple_boot_scripts=",
                                               ],
                              extra_option_handler=option_handler)
 
