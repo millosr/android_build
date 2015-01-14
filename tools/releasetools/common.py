@@ -206,7 +206,7 @@ def LoadRecoveryFSTab(read_helper, fstab_version):
     d = {}
     for line in data.split("\n"):
       line = line.strip()
-      if not line or line.startswith("#"): continue
+      if not line or (line.startswith("#") and not line.startswith("#/dev")): continue
       pieces = line.split()
       if not (3 <= len(pieces) <= 4):
         raise ValueError("malformed recovery.fstab line: \"%s\"" % (line,))
@@ -242,7 +242,7 @@ def LoadRecoveryFSTab(read_helper, fstab_version):
     d = {}
     for line in data.split("\n"):
       line = line.strip()
-      if not line or line.startswith("#"): continue
+      if not line or (line.startswith("#") and not line.startswith("#/dev")): continue
       pieces = line.split()
       if len(pieces) != 5:
         raise ValueError("malformed recovery.fstab line: \"%s\"" % (line,))
