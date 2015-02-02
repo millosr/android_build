@@ -121,6 +121,7 @@ FRAMEWORKS_BASE_SUBDIRS := \
 	    keystore \
 	    rs \
 	    security-bridge \
+	    fmradio \
 	 )
 
 #
