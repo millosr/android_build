@@ -294,7 +294,6 @@ def BuildBootableImage(sourcedir, fs_config_file, info_dict=None):
 
   ramdisk_img = tempfile.NamedTemporaryFile()
   img = tempfile.NamedTemporaryFile()
-  bootimg_key = os.getenv("PRODUCT_PRIVATE_KEY", None)
 
   if os.access(fs_config_file, os.F_OK):
     cmd = ["mkbootfs", "-f", fs_config_file, os.path.join(sourcedir, "RAMDISK")]
@@ -341,103 +340,14 @@ def BuildBootableImage(sourcedir, fs_config_file, info_dict=None):
   cmd.extend(["--ramdisk", ramdisk_img.name,
               "--output", img.name])
 
-  else:
-    # use MKBOOTIMG from environ, or "mkbootimg" if empty or not set
-    mkbootimg = os.getenv('MKBOOTIMG') or "mkbootimg"
-    cmd = [mkbootimg, "--kernel", os.path.join(sourcedir, "kernel")]
-
-    fn = os.path.join(sourcedir, "second")
-    if os.access(fn, os.F_OK):
-      cmd.append("--second")
-      cmd.append(fn)
-
-    fn = os.path.join(sourcedir, "cmdline")
-    if os.access(fn, os.F_OK):
-      cmd.append("--cmdline")
-      cmd.append(open(fn).read().rstrip("\n"))
-
-    fn = os.path.join(sourcedir, "base")
-    if os.access(fn, os.F_OK):
-      cmd.append("--base")
-      cmd.append(open(fn).read().rstrip("\n"))
-
-    fn = os.path.join(sourcedir, "tagsaddr")
-    if os.access(fn, os.F_OK):
-      cmd.append("--tags-addr")
-      cmd.append(open(fn).read().rstrip("\n"))
-
-    fn = os.path.join(sourcedir, "tags_offset")
-    if os.access(fn, os.F_OK):
-      cmd.append("--tags_offset")
-      cmd.append(open(fn).read().rstrip("\n"))
-
-    fn = os.path.join(sourcedir, "ramdisk_offset")
-    if os.access(fn, os.F_OK):
-      cmd.append("--ramdisk_offset")
-      cmd.append(open(fn).read().rstrip("\n"))
-
-    fn = os.path.join(sourcedir, "dt")
-    if os.access(fn, os.F_OK):
-      cmd.append("--dt")
-      cmd.append(fn)
-
-    fn = os.path.join(sourcedir, "pagesize")
-    if os.access(fn, os.F_OK):
-      kernel_pagesize=open(fn).read().rstrip("\n")
-      cmd.append("--pagesize")
-      cmd.append(kernel_pagesize)
-
-    args = info_dict.get("mkbootimg_args", None)
-    if args and args.strip():
-      cmd.extend(shlex.split(args))
-
-    cmd.extend(["--ramdisk", ramdisk_img.name,
-                "--output", img.name])
-
   p = Run(cmd, stdout=subprocess.PIPE)
   p.communicate()
   assert p.returncode == 0, "mkbootimg of %s image failed" % (
       os.path.basename(sourcedir),)
 
-  if bootimg_key and os.path.exists(bootimg_key) and kernel_pagesize > 0:
-    print "Signing bootable image..."
-    bootimg_key_passwords = {}
-    bootimg_key_passwords.update(PasswordManager().GetPasswords(bootimg_key.split()))
-    bootimg_key_password = bootimg_key_passwords[bootimg_key]
-    if bootimg_key_password is not None:
-        bootimg_key_password += "\n"
-    img_sha256 = tempfile.NamedTemporaryFile()
-    img_sig = tempfile.NamedTemporaryFile()
-    img_sig_padded = tempfile.NamedTemporaryFile()
-    img_secure = tempfile.NamedTemporaryFile()
-    p = Run(["openssl", "dgst", "-sha256", "-binary", "-out", img_sha256.name, img.name],
-        stdout=subprocess.PIPE)
-    p.communicate()
-    assert p.returncode == 0, "signing of bootable image failed"
-    p = Run(["openssl", "rsautl", "-sign", "-in", img_sha256.name, "-inkey", bootimg_key, "-out",
-        img_sig.name, "-passin", "stdin"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-    p.communicate(bootimg_key_password)
-    assert p.returncode == 0, "signing of bootable image failed"
-    p = Run(["dd", "if=/dev/zero", "of=%s" % img_sig_padded.name, "bs=%s" % kernel_pagesize,
-        "count=1"], stdout=subprocess.PIPE)
-    p.communicate()
-    assert p.returncode == 0, "signing of bootable image failed"
-    p = Run(["dd", "if=%s" % img_sig.name, "of=%s" % img_sig_padded.name, "conv=notrunc"],
-        stdout=subprocess.PIPE)
-    p.communicate()
-    assert p.returncode == 0, "signing of bootable image failed"
-    p = Run(["cat", img.name, img_sig_padded.name], stdout=img_secure.file.fileno())
-    p.communicate()
-    assert p.returncode == 0, "signing of bootable image failed"
-    shutil.copyfile(img_secure.name, img.name)
-    img_sha256.close()
-    img_sig.close()
-    img_sig_padded.close()
-    img_secure.close()
-
   if info_dict.get("verity_key", None):
     path = "/" + os.path.basename(sourcedir).lower()
-    cmd = ["boot_signer", path, img.name, info_dict["verity_key"], img.name]
+    cmd = ["boot_signer", path, img.name, info_dict["verity_key"] + ".pk8", info_dict["verity_key"] + ".x509.pem", img.name]
     p = Run(cmd, stdout=subprocess.PIPE)
     p.communicate()
     assert p.returncode == 0, "boot_signer of %s image failed" % path
@@ -1128,7 +1038,14 @@ class BlockDifference:
     self.partition = partition
     self.check_first_block = check_first_block
 
-    b = blockimgdiff.BlockImageDiff(tgt, src, threads=OPTIONS.worker_threads)
+    version = 1
+    if OPTIONS.info_dict:
+      version = max(
+          int(i) for i in
+          OPTIONS.info_dict.get("blockimgdiff_versions", "1").split(","))
+
+    b = blockimgdiff.BlockImageDiff(tgt, src, threads=OPTIONS.worker_threads,
+                                    version=version)
     tmpdir = tempfile.mkdtemp()
     OPTIONS.tempfiles.append(tmpdir)
     self.path = os.path.join(tmpdir, partition)
@@ -1139,9 +1056,16 @@ class BlockDifference:
   def WriteScript(self, script, output_zip, progress=None):
     if not self.src:
       # write the output unconditionally
-      if progress: script.ShowProgress(progress, 0)
-      self._WriteUpdate(script, output_zip)
+      script.Print("Patching %s image unconditionally..." % (self.partition,))
+    else:
+      script.Print("Patching %s image after verification." % (self.partition,))
 
+    if progress: script.ShowProgress(progress, 0)
+    self._WriteUpdate(script, output_zip)
+
+  def WriteVerifyScript(self, script):
+    if not self.src:
+      script.Print("Image %s will be patched unconditionally." % (self.partition,))
     else:
       if self.check_first_block:
         self._CheckFirstBlock(script)
@@ -1149,9 +1073,7 @@ class BlockDifference:
       script.AppendExtra('if range_sha1("%s", "%s") == "%s" then' %
                          (self.device, self.src.care_map.to_string_raw(),
                           self.src.TotalSha1()))
-      script.Print("Patching %s image..." % (self.partition,))
-      if progress: script.ShowProgress(progress, 0)
-      self._WriteUpdate(script, output_zip)
+      script.Print("Verified %s image..." % (self.partition,))
       script.AppendExtra(('else\n'
                           '  (range_sha1("%s", "%s") == "%s") ||\n'
                           '  abort("%s partition has unexpected contents");\n'
