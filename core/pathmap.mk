@@ -91,7 +91,6 @@ FRAMEWORKS_BASE_SUBDIRS := \
 	    wifi \
 	    keystore \
 	    rs \
-	    fmradio \
 	 )
 
 #
