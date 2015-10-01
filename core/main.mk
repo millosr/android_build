@@ -510,7 +510,7 @@ ifneq ($(dont_bother),true)
 # Include all of the makefiles in the system
 #
 
-subdir_makefile_dirs := abi bionic bootable build device external hardware hybris libcore system
+subdir_makefile_dirs := abi bionic bootable build device external hardware hybris libcore system kernel
 
 # Can't use first-makefiles-under here because
 # --mindepth=2 makes the prunes not work.
@@ -537,6 +537,7 @@ subdir_makefiles := \
 ./frameworks/av/services/camera/libcameraservice/Android.mk \
 ./frameworks/av/media/libmediaplayerservice/Android.mk \
 ./prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.8/Android.mk \
+./prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.7/Android.mk \
 ./prebuilts/ndk/Android.mk \
 ./prebuilts/tools/Android.mk \
 $(shell build/tools/findleaves.py --prune=out --prune=.repo --prune=.git $(subdir_makefile_dirs) Android.mk)
