@@ -23,6 +23,7 @@ PRODUCT_PACKAGES := \
 	Development \
 	DevelopmentSettings \
 	Dialer \
+        Eleven \
 	EmulatorSmokeTests \
 	Fallback \
 	Gallery \
@@ -34,7 +35,6 @@ PRODUCT_PACKAGES := \
 	libWnnJpnDic \
 	LiveWallpapersPicker \
 	Mms \
-	Music \
 	OpenWnn \
 	Protips \
 	rild \
