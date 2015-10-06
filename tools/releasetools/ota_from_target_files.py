@@ -108,6 +108,10 @@ Usage:  ota_from_target_files [flags] input_target_files output_ota_package
       Specifies the number of worker-threads that will be used when
       generating patches for incremental updates (defaults to 3).
 
+  --backup <boolean>
+      Enable or disable the execution of backuptool.sh.
+      Disabled by default.
+
   --stash_threshold <float>
       Specifies the threshold that will be used to compute the maximum
       allowed stash size (defaults to 0.8).
@@ -190,6 +194,7 @@ OPTIONS.full_radio = False
 OPTIONS.full_bootloader = False
 # Stash size cannot exceed cache_size * threshold.
 OPTIONS.cache_size = None
+OPTIONS.backuptool = False
 OPTIONS.stash_threshold = 0.8
 OPTIONS.gen_verify = False
 OPTIONS.log_diff = None
@@ -392,6 +397,16 @@ def AddCompatibilityArchive(target_zip, output_zip, system_included=True,
                     compress_type=zipfile.ZIP_STORED)
 
 
+def CopyInstallTools(output_zip):
+  oldcwd = os.getcwd()
+  os.chdir(os.getenv('OUT'))
+  for root, subdirs, files in os.walk("install"):
+    for f in files:
+      p = os.path.join(root, f)
+      output_zip.write(p, p)
+  os.chdir(oldcwd)
+
+
 def WriteFullOTAPackage(input_zip, output_zip):
   # TODO: how to determine this?  We don't know what version it will
   # be installed on top of. For now, we expect the API just won't
@@ -506,6 +521,19 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
   script.Print('***     nAOSP ROM      ***')
   script.Print('**************************')
 
+  if OPTIONS.backuptool:
+    CopyInstallTools(output_zip)
+    script.UnpackPackageDir("install", "/tmp/install")
+    script.SetPermissionsRecursive("/tmp/install", 0, 0, 0755, 0644, None, None)
+    script.SetPermissionsRecursive("/tmp/install/bin", 0, 0, 0755, 0755, None, None)
+    # Mount /system
+    script.Mount("/system", recovery_mount_options)
+    # backup /system/addon.d and execute backup scripts from it
+    script.Print('*** addon.d - backup   ***')
+    script.RunBackup("backup")
+    # Unmount /system
+    script.Unmount("/system")
+
   script.Print('*** Flashing nAOSP ROM ***')
 
   # Full OTA is done as an "incremental" against an empty source image. This
@@ -534,6 +562,16 @@ e2fsck -fy $1
 ''')
       script.AppendExtra('package_extract_file("resize2fs.sh", "/tmp/resize2fs.sh");')
       script.AppendExtra('run_program("/sbin/sh", "/tmp/resize2fs.sh", "' + fsys.device + '");')
+
+  if OPTIONS.backuptool:
+    # Mount /system
+    script.Mount("/system", recovery_mount_options)
+    # restore /system/addon.d and execute restore scripts from it
+    script.ShowProgress(0.02, 10)
+    script.Print('*** addon.d - restore  ***')
+    script.RunBackup("restore")
+    # Unmount /system
+    script.Unmount("/system")
 
   if HasVendorPartition(input_zip):
     script.ShowProgress(0.1, 0)
@@ -1354,6 +1392,8 @@ def main(argv):
       OPTIONS.updater_binary = a
     elif o in ("--no_fallback_to_full",):
       OPTIONS.fallback_to_full = False
+    elif o in ("--backup"):
+      OPTIONS.backuptool = bool(a.lower() == 'true')
     elif o == "--stash_threshold":
       try:
         OPTIONS.stash_threshold = float(a)
@@ -1403,6 +1443,7 @@ def main(argv):
                                  "oem_no_mount",
                                  "verify",
                                  "no_fallback_to_full",
+                                 "backup=",
                                  "stash_threshold=",
                                  "gen_verify",
                                  "log_diff=",
