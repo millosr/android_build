@@ -84,6 +84,19 @@ Usage:  ota_from_target_files [flags] input_target_files output_ota_package
       Specifies the number of worker-threads that will be used when
       generating patches for incremental updates (defaults to 3).
 
+  --override_device <device>
+      Override device-specific asserts. Can be a comma-separated list.
+  
+  --no_separate_recovery <boolean>
+      Do not generate recovery image. For devices which do not have a truly
+      separate recovery partition.
+
+  --multiple_boot <list>
+      List of boot.img files separated by comma
+
+  --multiple_boot_scripts <path>      flash
+      Path to customota.boot and customota.prep to handle multiple boot
+
 """
 
 import sys
@@ -122,6 +135,10 @@ OPTIONS.updater_binary = None
 OPTIONS.oem_source = None
 OPTIONS.fallback_to_full = True
 OPTIONS.full_radio = False
+OPTIONS.override_device = 'auto'
+OPTIONS.no_separate_recovery = False
+OPTIONS.multiple_boot = None
+OPTIONS.multiple_boot_scripts = None
 
 def MostPopularKey(d, default):
   """Given a dict, return the key corresponding to the largest
@@ -401,7 +418,10 @@ def SignOutput(temp_zip_name, output_zip_name):
 def AppendAssertions(script, info_dict, oem_dict=None):
   oem_props = info_dict.get("oem_fingerprint_properties")
   if oem_props is None or len(oem_props) == 0:
-    device = GetBuildProp("ro.product.device", info_dict)
+    if OPTIONS.override_device == "auto":
+      device = GetBuildProp("ro.product.device", info_dict)
+    else:
+      device = OPTIONS.override_device    
     script.AssertDevice(device)
   else:
     if oem_dict is None:
@@ -549,7 +569,8 @@ def WriteFullOTAPackage(input_zip, output_zip):
   #    complete script normally
   #    (allow recovery to mark itself finished and reboot)
 
-  recovery_img = common.GetBootableImage("recovery.img", "recovery.img",
+  if not OPTIONS.no_separate_recovery:  
+    recovery_img = common.GetBootableImage("recovery.img", "recovery.img",
                                          OPTIONS.input_tmp, "RECOVERY")
   if OPTIONS.two_step:
     if not OPTIONS.info_dict.get("multistage_support", None):
@@ -602,23 +623,25 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
   else:
     script.FormatPartition("/system")
     script.Mount("/system", recovery_mount_options)
-    if not has_recovery_patch:
+    if not has_recovery_patch and not OPTIONS.no_separate_recovery:
       script.UnpackPackageDir("recovery", "/system")
     script.UnpackPackageDir("system", "/system")
 
     symlinks = CopyPartitionFiles(system_items, input_zip, output_zip)
     script.MakeSymlinks(symlinks)
 
-  boot_img = common.GetBootableImage("boot.img", "boot.img",
-                                     OPTIONS.input_tmp, "BOOT")
+  if OPTIONS.multiple_boot is None:
+    boot_img = common.GetBootableImage("boot.img", "boot.img",
+                                       OPTIONS.input_tmp, "BOOT")
 
   if not block_based:
     def output_sink(fn, data):
       common.ZipWriteStr(output_zip, "recovery/" + fn, data)
       system_items.Get("system/" + fn)
 
-    common.MakeRecoveryPatch(OPTIONS.input_tmp, output_sink,
-                             recovery_img, boot_img)
+    if not OPTIONS.no_separate_recovery and OPTIONS.multiple_boot is None:
+      common.MakeRecoveryPatch(OPTIONS.input_tmp, output_sink,
+                               recovery_img, boot_img)
 
     system_items.GetMetadata(input_zip)
     system_items.Get("system").SetPermissions(script)
@@ -643,11 +666,24 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
       vendor_items.GetMetadata(input_zip)
       vendor_items.Get("vendor").SetPermissions(script)
 
-  common.CheckSize(boot_img.data, "boot.img", OPTIONS.info_dict)
-  common.ZipWriteStr(output_zip, "boot.img", boot_img.data)
-
+  if OPTIONS.multiple_boot is None:
+    common.CheckSize(boot_img.data, "boot.img", OPTIONS.info_dict)
+    common.ZipWriteStr(output_zip, "boot.img", boot_img.data)
+  else:
+    for boot_file in OPTIONS.multiple_boot:
+      boot_img = common.GetBootableImage(boot_file, boot_file,
+                                         OPTIONS.input_tmp, "BOOT")
+      common.CheckSize(boot_img.data, "boot.img", OPTIONS.info_dict)
+      common.ZipWriteStr(output_zip, boot_file, boot_img.data)
+      
   script.ShowProgress(0.05, 5)
-  script.WriteRawImage("/boot", "boot.img")
+  
+  if OPTIONS.multiple_boot is None:
+    script.WriteRawImage("/boot", "boot.img")
+  else:
+    if OPTIONS.multiple_boot_scripts is not None:
+      script.AppendExtra(open(OPTIONS.multiple_boot_scripts + "/customota.boot").read())
+      common.ZipWriteStr(output_zip, "install-prep.sh", open(OPTIONS.multiple_boot_scripts + "/customota.prep").read())
 
   script.ShowProgress(0.2, 10)
   device_specific.FullOTA_InstallEnd()
@@ -1180,12 +1216,15 @@ def WriteIncrementalOTAPackage(target_zip, source_zip, output_zip):
   updating_boot = (not OPTIONS.two_step and
                    (source_boot.data != target_boot.data))
 
-  source_recovery = common.GetBootableImage(
-      "/tmp/recovery.img", "recovery.img", OPTIONS.source_tmp, "RECOVERY",
-      OPTIONS.source_info_dict)
-  target_recovery = common.GetBootableImage(
-      "/tmp/recovery.img", "recovery.img", OPTIONS.target_tmp, "RECOVERY")
-  updating_recovery = (source_recovery.data != target_recovery.data)
+  if not OPTIONS.no_separate_recovery:
+    source_recovery = common.GetBootableImage(
+        "/tmp/recovery.img", "recovery.img", OPTIONS.source_tmp, "RECOVERY",
+        OPTIONS.source_info_dict)
+    target_recovery = common.GetBootableImage(
+        "/tmp/recovery.img", "recovery.img", OPTIONS.target_tmp, "RECOVERY")
+    updating_recovery = (source_recovery.data != target_recovery.data)
+  else:
+    updating_recovery = False
 
   # Here's how we divide up the progress bar:
   #  0.1 for verifying the start state (PatchCheck calls)
@@ -1336,7 +1375,7 @@ else
   if vendor_diff:
     vendor_items = ItemSet("vendor", "META/vendor_filesystem_config.txt")
 
-  if updating_recovery:
+  if updating_recovery and not OPTIONS.no_separate_recovery:
     # Recovery is generated as a patch using both the boot image
     # (which contains the same linux kernel as recovery) and the file
     # /system/etc/recovery-resource.dat (which contains all the images
@@ -1422,7 +1461,7 @@ else
     script.Print("Unpacking new vendor files...")
     script.UnpackPackageDir("vendor", "/vendor")
 
-  if updating_recovery and not target_has_recovery_patch:
+  if updating_recovery and not target_has_recovery_patch and not OPTIONS.no_separate_recovery:
     script.Print("Unpacking new recovery...")
     script.UnpackPackageDir("recovery", "/system")
 
@@ -1530,6 +1569,14 @@ def main(argv):
       OPTIONS.updater_binary = a
     elif o in ("--no_fallback_to_full",):
       OPTIONS.fallback_to_full = False
+    elif o in ("--override_device"):
+      OPTIONS.override_device = a
+    elif o in ("--no_separate_recovery"):
+      OPTIONS.no_separate_recovery = bool(a.lower() == 'true')
+    elif o in ("--multiple_boot"):
+      OPTIONS.multiple_boot = a.split(',')
+    elif o in ("--multiple_boot_scripts"):
+      OPTIONS.multiple_boot_scripts = a
     else:
       return False
     return True
@@ -1553,6 +1600,10 @@ def main(argv):
                                  "oem_settings=",
                                  "verify",
                                  "no_fallback_to_full",
+                                 "override_device=",
+                                 "no_separate_recovery=",
+                                 "multiple_boot=",
+                                 "multiple_boot_scripts=",
                              ], extra_option_handler=option_handler)
 
   if len(args) != 2:
