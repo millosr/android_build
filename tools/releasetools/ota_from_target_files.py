@@ -687,6 +687,11 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
                                          OPTIONS.input_tmp, "BOOT")
       common.CheckSize(boot_img.data, "boot.img", OPTIONS.info_dict)
       common.ZipWriteStr(output_zip, boot_file, boot_img.data)
+
+  if OPTIONS.no_separate_recovery:
+    recovery_img = common.GetBootableImage("recovery.img", "recovery.img",
+                                         OPTIONS.input_tmp, "RECOVERY")
+    common.ZipWriteStr(output_zip, "recovery.img", recovery_img.data)
       
   script.ShowProgress(0.05, 5)
   
