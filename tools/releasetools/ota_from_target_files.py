@@ -623,6 +623,9 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
   system_items = ItemSet("system", "META/filesystem_config.txt")
   script.ShowProgress(system_progress, 0)
 
+  script.Print('**************************')
+  script.Print('*** Flashing nAOSP ROM ***')
+  script.Print('**************************')
   if block_based:
     # Full OTA is done as an "incremental" against an empty source
     # image.  This has the effect of writing new data from the package
@@ -688,19 +691,22 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
       common.CheckSize(boot_img.data, "boot.img", OPTIONS.info_dict)
       common.ZipWriteStr(output_zip, boot_file, boot_img.data)
 
-  if OPTIONS.no_separate_recovery:
-    recovery_img = common.GetBootableImage("recovery.img", "recovery.img",
-                                         OPTIONS.input_tmp, "RECOVERY")
-    common.ZipWriteStr(output_zip, "recovery.img", recovery_img.data)
-      
   script.ShowProgress(0.05, 5)
-  
+
+  script.Print('*** Flashing boot      ***')
   if OPTIONS.multiple_boot is None:
     script.WriteRawImage("/boot", "boot.img")
   else:
     if OPTIONS.multiple_boot_scripts is not None:
       script.AppendExtra(open(OPTIONS.multiple_boot_scripts + "/customota.boot").read())
       common.ZipWriteStr(output_zip, "install-prep.sh", open(OPTIONS.multiple_boot_scripts + "/customota.prep").read())
+
+  if OPTIONS.no_separate_recovery:
+    recovery_img = common.GetBootableImage("recovery.img", "recovery.img",
+                                         OPTIONS.input_tmp, "RECOVERY")
+    common.ZipWriteStr(output_zip, "recovery.img", recovery_img.data)
+    script.Print('*** Flashing Recovery  ***')
+    script.AppendExtra('package_extract_file("recovery.img", "/dev/block/mmcblk0p11");')
 
   script.ShowProgress(0.2, 10)
   device_specific.FullOTA_InstallEnd()
