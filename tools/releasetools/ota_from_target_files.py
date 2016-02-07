@@ -624,8 +624,29 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
   script.ShowProgress(system_progress, 0)
 
   script.Print('**************************')
-  script.Print('*** Flashing nAOSP ROM ***')
+  script.Print('***     nAOSP ROM      ***')
   script.Print('**************************')
+
+  # Backup Theme files if available
+  script.Print('*** Backup Theme       ***')
+  script.Mount("/system", recovery_mount_options)
+  common.ZipWriteStr(output_zip, "overlay.sh", '''#!/sbin/sh
+
+case "$1" in
+    backup)
+        [ -d /system/vendor/overlay ] && tar -cf /tmp/overlay.tar /system/vendor/overlay/ 2> /dev/null
+        ;;
+    restore)
+        [ -f /tmp/overlay.tar ] && tar xf /tmp/overlay.tar -C /
+        ;;
+esac''')
+
+  script.AppendExtra('package_extract_file("overlay.sh", "/tmp/overlay.sh");')
+  script.AppendExtra('run_program("/sbin/sh", "/tmp/overlay.sh", "backup");')
+  script.Unmount("/system")
+
+  script.Print('*** Flashing nAOSP ROM ***')
+
   if block_based:
     # Full OTA is done as an "incremental" against an empty source
     # image.  This has the effect of writing new data from the package
@@ -644,6 +665,12 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
 
     symlinks = CopyPartitionFiles(system_items, input_zip, output_zip)
     script.MakeSymlinks(symlinks)
+
+  # Restore Theme files if available
+  script.Print('*** Restore Theme      ***')
+  script.Mount("/system", recovery_mount_options)
+  script.AppendExtra('run_program("/sbin/sh", "/tmp/overlay.sh", "restore");')
+  script.Unmount("/system")
 
   if OPTIONS.multiple_boot is None:
     boot_img = common.GetBootableImage("boot.img", "boot.img",
