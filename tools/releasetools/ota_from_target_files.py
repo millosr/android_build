@@ -666,10 +666,19 @@ esac''')
     symlinks = CopyPartitionFiles(system_items, input_zip, output_zip)
     script.MakeSymlinks(symlinks)
 
+  # Mount /system
+  script.Mount("/system", recovery_mount_options)
+
+  # .supersu
+  script.Print('*** /system/.supersu   ***')
+  common.ZipWriteStr(output_zip, ".supersu", "SYSTEMLESS=false")
+  script.AppendExtra('package_extract_file(".supersu", "/system/.supersu");')
+
   # Restore Theme files if available
   script.Print('*** Restore Theme      ***')
-  script.Mount("/system", recovery_mount_options)
   script.AppendExtra('run_program("/sbin/sh", "/tmp/overlay.sh", "restore");')
+
+  # Unmount /system
   script.Unmount("/system")
 
   if OPTIONS.multiple_boot is None:
