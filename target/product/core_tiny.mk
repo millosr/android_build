@@ -57,7 +57,6 @@ PRODUCT_PACKAGES += \
     gatekeeperd \
     keystore \
     keystore.default \
-    ld.mc \
     libOpenMAXAL \
     libOpenSLES \
     libdownmix \
