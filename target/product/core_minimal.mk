@@ -28,6 +28,7 @@ PRODUCT_PACKAGES += \
     HTMLViewer \
     MediaProvider \
     PackageInstaller \
+    gapps-config.txt \
     SettingsProvider \
     Shell \
     StatementService \
