@@ -356,8 +356,8 @@ def AddImagesToTargetFiles(filename):
   if has_system_other:
     banner("system_other")
     AddSystemOther(output_zip)
-  banner("userdata")
-  AddUserdata(output_zip)
+  #banner("userdata")
+  #AddUserdata(output_zip)
   banner("cache")
   AddCache(output_zip)
 
