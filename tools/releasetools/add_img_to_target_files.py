@@ -390,8 +390,8 @@ def AddImagesToTargetFiles(filename):
     banner("system_other")
     AddSystemOther(output_zip)
   if not OPTIONS.is_signing:
-    banner("userdata")
-    AddUserdata(output_zip)
+    #banner("userdata")
+    #AddUserdata(output_zip)
     banner("cache")
     AddCache(output_zip)
 

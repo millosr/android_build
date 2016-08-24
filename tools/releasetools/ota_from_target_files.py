@@ -124,6 +124,24 @@ Usage:  ota_from_target_files [flags] input_target_files output_ota_package
 
   --payload_signer_args <args>
       Specify the arguments needed for payload signer.
+
+  --override_device <device>
+      Override device-specific asserts. Can be a comma-separated list.
+
+  --no_separate_recovery <boolean>
+      Do not generate recovery image. For devices which do not have a truly
+      separate recovery partition.
+
+  --custom_recovery_partition <block device>
+      Permit to set a FOTA partition that will be used to flash the recovery
+      when no_separate_recovery is used. (mainly for devices with a possible
+      alternative to recovery like fota partition)
+
+  --no_supersu_system
+      Do not create a /system/.supersu to force system installation of SuperSU
+
+  --no_preserve_themes
+      Do not backup/restore overlay themes
 """
 
 import sys
@@ -174,6 +192,11 @@ OPTIONS.gen_verify = False
 OPTIONS.log_diff = None
 OPTIONS.payload_signer = None
 OPTIONS.payload_signer_args = []
+OPTIONS.override_device = 'auto'
+OPTIONS.no_separate_recovery = False
+OPTIONS.custom_recovery_partition = None
+OPTIONS.no_supersu_system = False
+OPTIONS.no_preserve_themes = False
 
 def MostPopularKey(d, default):
   """Given a dict, return the key corresponding to the largest
@@ -454,7 +477,10 @@ def SignOutput(temp_zip_name, output_zip_name):
 def AppendAssertions(script, info_dict, oem_dict=None):
   oem_props = info_dict.get("oem_fingerprint_properties")
   if oem_props is None or len(oem_props) == 0:
-    device = GetBuildProp("ro.product.device", info_dict)
+    if OPTIONS.override_device == "auto":
+      device = GetBuildProp("ro.product.device", info_dict)
+    else:
+      device = OPTIONS.override_device
     script.AssertDevice(device)
   else:
     if oem_dict is None:
@@ -636,7 +662,8 @@ def WriteFullOTAPackage(input_zip, output_zip):
   #    complete script normally
   #    (allow recovery to mark itself finished and reboot)
 
-  recovery_img = common.GetBootableImage("recovery.img", "recovery.img",
+  if not OPTIONS.no_separate_recovery:
+    recovery_img = common.GetBootableImage("recovery.img", "recovery.img",
                                          OPTIONS.input_tmp, "RECOVERY")
   if OPTIONS.two_step:
     if not OPTIONS.info_dict.get("multistage_support", None):
@@ -685,6 +712,30 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
   system_items = ItemSet("system", "META/filesystem_config.txt")
   script.ShowProgress(system_progress, 0)
 
+  script.Print('**************************')
+  script.Print('***     nAOSP ROM      ***')
+  script.Print('**************************')
+
+  if not OPTIONS.no_preserve_themes:
+    # Backup Theme files if available
+    script.Print('*** Backup Theme       ***')
+    script.Mount("/system", recovery_mount_options)
+    common.ZipWriteStr(output_zip, "overlay.sh", '''#!/sbin/sh
+
+case "$1" in
+    backup)
+        [ -d /system/vendor/overlay ] && tar -cf /tmp/overlay.tar /system/vendor/overlay/ 2> /dev/null
+        ;;
+    restore)
+        [ -f /tmp/overlay.tar ] && tar xf /tmp/overlay.tar -C /
+        ;;
+esac''')
+    script.AppendExtra('package_extract_file("overlay.sh", "/tmp/overlay.sh");')
+    script.AppendExtra('run_program("/sbin/sh", "/tmp/overlay.sh", "backup");')
+    script.Unmount("/system")
+
+  script.Print('*** Flashing nAOSP ROM ***')
+
   if block_based:
     # Full OTA is done as an "incremental" against an empty source
     # image.  This has the effect of writing new data from the package
@@ -697,7 +748,7 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
   else:
     script.FormatPartition("/system")
     script.Mount("/system", recovery_mount_options)
-    if not has_recovery_patch:
+    if not OPTIONS.no_separate_recovery and not has_recovery_patch:
       script.UnpackPackageDir("recovery", "/system")
     script.UnpackPackageDir("system", "/system")
 
@@ -707,12 +758,32 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
   boot_img = common.GetBootableImage(
       "boot.img", "boot.img", OPTIONS.input_tmp, "BOOT")
 
+  if not OPTIONS.no_supersu_system or not OPTIONS.no_preserve_themes:
+    # Mount /system
+    script.Mount("/system", recovery_mount_options)
+
+  if not OPTIONS.no_supersu_system:
+    # .supersu
+    script.Print('*** /system/.supersu   ***')
+    common.ZipWriteStr(output_zip, ".supersu", "SYSTEMLESS=false")
+    script.AppendExtra('package_extract_file(".supersu", "/system/.supersu");')
+
+  if not OPTIONS.no_preserve_themes:
+    # Restore Theme files if available
+    script.Print('*** Restoring Theme    ***')
+    script.AppendExtra('run_program("/sbin/sh", "/tmp/overlay.sh", "restore");')
+
+  if not OPTIONS.no_supersu_system or not OPTIONS.no_preserve_themes:
+    # Unmount /system
+    script.Unmount("/system")
+
   if not block_based:
     def output_sink(fn, data):
       common.ZipWriteStr(output_zip, "recovery/" + fn, data)
       system_items.Get("system/" + fn)
 
-    common.MakeRecoveryPatch(OPTIONS.input_tmp, output_sink,
+    if not OPTIONS.no_separate_recovery:
+      common.MakeRecoveryPatch(OPTIONS.input_tmp, output_sink,
                              recovery_img, boot_img)
 
     system_items.GetMetadata(input_zip)
@@ -742,7 +813,15 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
   common.ZipWriteStr(output_zip, "boot.img", boot_img.data)
 
   script.ShowProgress(0.05, 5)
+  script.Print('*** Flashing boot      ***')
   script.WriteRawImage("/boot", "boot.img")
+
+  if OPTIONS.no_separate_recovery and OPTIONS.custom_recovery_partition is not None:
+    recovery_img = common.GetBootableImage("recovery.img", "recovery.img",
+                                         OPTIONS.input_tmp, "RECOVERY")
+    common.ZipWriteStr(output_zip, "recovery.img", recovery_img.data)
+    script.Print('*** Flashing Recovery  ***')
+    script.AppendExtra('package_extract_file("recovery.img", "' + OPTIONS.custom_recovery_partition + '");')
 
   script.ShowProgress(0.2, 10)
   device_specific.FullOTA_InstallEnd()
@@ -904,7 +983,8 @@ def WriteBlockIncrementalOTAPackage(target_zip, source_zip, output_zip):
   updating_boot = (not OPTIONS.two_step and
                    (source_boot.data != target_boot.data))
 
-  target_recovery = common.GetBootableImage(
+  if not OPTIONS.no_separate_recovery:
+    target_recovery = common.GetBootableImage(
       "/tmp/recovery.img", "recovery.img", OPTIONS.target_tmp, "RECOVERY")
 
   system_src = GetImage("system", OPTIONS.source_tmp, OPTIONS.source_info_dict)
@@ -1194,14 +1274,15 @@ def WriteVerifyPackage(input_zip, output_zip):
       boot_type, boot_device, boot_img.size, boot_img.sha1))
   script.AppendExtra("")
 
-  script.Print("Verifying recovery...")
-  recovery_img = common.GetBootableImage(
+  if not OPTIONS.no_separate_recovery:
+    script.Print("Verifying recovery...")
+    recovery_img = common.GetBootableImage(
       "recovery.img", "recovery.img", OPTIONS.input_tmp, "RECOVERY")
-  recovery_type, recovery_device = common.GetTypeAndDevice(
+    recovery_type, recovery_device = common.GetTypeAndDevice(
       "/recovery", OPTIONS.info_dict)
-  script.Verify("%s:%s:%d:%s" % (
+    script.Verify("%s:%s:%d:%s" % (
       recovery_type, recovery_device, recovery_img.size, recovery_img.sha1))
-  script.AppendExtra("")
+    script.AppendExtra("")
 
   system_tgt = GetImage("system", OPTIONS.input_tmp, OPTIONS.info_dict)
   system_tgt.ResetFileMap()
@@ -1621,12 +1702,15 @@ def WriteIncrementalOTAPackage(target_zip, source_zip, output_zip):
   updating_boot = (not OPTIONS.two_step and
                    (source_boot.data != target_boot.data))
 
-  source_recovery = common.GetBootableImage(
+  if not OPTIONS.no_separate_recovery:
+    source_recovery = common.GetBootableImage(
       "/tmp/recovery.img", "recovery.img", OPTIONS.source_tmp, "RECOVERY",
       OPTIONS.source_info_dict)
-  target_recovery = common.GetBootableImage(
+    target_recovery = common.GetBootableImage(
       "/tmp/recovery.img", "recovery.img", OPTIONS.target_tmp, "RECOVERY")
-  updating_recovery = (source_recovery.data != target_recovery.data)
+    updating_recovery = (source_recovery.data != target_recovery.data)
+  else:
+    updating_recovery = False
 
   # Here's how we divide up the progress bar:
   #  0.1 for verifying the start state (PatchCheck calls)
@@ -2014,6 +2098,16 @@ def main(argv):
       OPTIONS.payload_signer = a
     elif o == "--payload_signer_args":
       OPTIONS.payload_signer_args = shlex.split(a)
+    elif o in ("--override_device"):
+      OPTIONS.override_device = a
+    elif o in ("--no_separate_recovery"):
+      OPTIONS.no_separate_recovery = bool(a.lower() == 'true')
+    elif o in ("--custom_recovery_partition"):
+      OPTIONS.custom_recovery_partition = a
+    elif o in ("--no_supersu_system"):
+      OPTIONS.no_supersu_system = True
+    elif o in ("--no_preserve_themes"):
+      OPTIONS.no_preserve_themes = True
     else:
       return False
     return True
@@ -2045,6 +2139,11 @@ def main(argv):
                                  "log_diff=",
                                  "payload_signer=",
                                  "payload_signer_args=",
+                                 "override_device=",
+                                 "no_separate_recovery=",
+                                 "custom_recovery_partition=",
+                                 "no_supersu_system",
+                                 "no_preserve_themes"
                              ], extra_option_handler=option_handler)
 
   if len(args) != 2:
