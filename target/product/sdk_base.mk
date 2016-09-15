@@ -22,6 +22,7 @@ PRODUCT_PACKAGES := \
 	CustomLocale \
 	Development \
 	Dialer \
+	Eleven \
 	EmulatorSmokeTests \
 	Fallback \
 	Gallery \
@@ -34,7 +35,6 @@ PRODUCT_PACKAGES := \
 	libWnnJpnDic \
 	LiveWallpapersPicker \
 	Mms \
-	Music \
 	OpenWnn \
 	Protips \
 	rild \
