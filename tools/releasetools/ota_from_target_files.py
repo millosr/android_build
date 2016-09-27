@@ -773,6 +773,12 @@ esac''')
     script.Print('*** Restoring Theme    ***')
     script.AppendExtra('run_program("/sbin/sh", "/tmp/overlay.sh", "restore");')
 
+  # gapps-config
+  script.Print('*** gapps-config.txt   ***')
+  common.ZipWriteStr(output_zip, "gapps-config.txt", "PackageInstallerGoogle")
+  script.AppendExtra('run_program("/sbin/mkdir", "-p", "/persist");')
+  script.AppendExtra('package_extract_file("gapps-config.txt", "/persist/gapps-config.txt");')
+
   if not OPTIONS.no_supersu_system or not OPTIONS.no_preserve_themes:
     # Unmount /system
     script.Unmount("/system")
