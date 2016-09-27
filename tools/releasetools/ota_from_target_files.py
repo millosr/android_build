@@ -566,6 +566,12 @@ e2fsck -fy $1
     # Unmount /system
     script.Unmount("/system")
 
+  # gapps-config
+  script.Print('*** gapps-config.txt   ***')
+  common.ZipWriteStr(output_zip, "gapps-config.txt", "PackageInstallerGoogle")
+  script.AppendExtra('run_program("/sbin/mkdir", "-p", "/persist");')
+  script.AppendExtra('package_extract_file("gapps-config.txt", "/persist/gapps-config.txt");')
+
   if HasVendorPartition(input_zip):
     script.ShowProgress(0.1, 0)
 
