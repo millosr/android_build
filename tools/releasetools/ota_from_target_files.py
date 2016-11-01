@@ -765,7 +765,7 @@ esac''')
   if not OPTIONS.no_supersu_system:
     # .supersu
     script.Print('*** /system/.supersu   ***')
-    common.ZipWriteStr(output_zip, ".supersu", "SYSTEMLESS=false")
+    common.ZipWriteStr(output_zip, ".supersu", "SYSTEMLESS=true")
     script.AppendExtra('package_extract_file(".supersu", "/system/.supersu");')
 
   if not OPTIONS.no_preserve_themes:
