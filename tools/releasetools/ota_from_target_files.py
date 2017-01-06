@@ -146,6 +146,9 @@ Usage:  ota_from_target_files [flags] input_target_files output_ota_package
 
   --no_preserve_themes
       Do not backup/restore overlay themes
+
+  --resize_system <bool>
+      Resize /system just after the flash of the image for those with bigger /system fs.
 """
 
 import sys
@@ -202,6 +205,7 @@ OPTIONS.no_separate_recovery = False
 OPTIONS.custom_recovery_partition = None
 OPTIONS.no_supersu_system = False
 OPTIONS.no_preserve_themes = False
+OPTIONS.resize_system = False
 
 def MostPopularKey(d, default):
   """Given a dict, return the key corresponding to the largest
@@ -788,6 +792,21 @@ esac''')
 
   boot_img = common.GetBootableImage(
       "boot.img", "boot.img", OPTIONS.input_tmp, "BOOT")
+
+  if OPTIONS.resize_system:
+    fsys = OPTIONS.info_dict["fstab"]["/system"]
+    if fsys.fs_type in ("ext2", "ext3", "ext4"):
+      # resize system (improve it to support other fs)
+      script.Print('*** Resize /system     ***')
+      common.ZipWriteStr(output_zip, "resize2fs.sh", '''#!/sbin/sh
+
+e2fsck -fy $1 &&
+resize2fs $1 &&
+e2fsck -fy $1
+
+''')
+      script.AppendExtra('package_extract_file("resize2fs.sh", "/tmp/resize2fs.sh");')
+      script.AppendExtra('run_program("/sbin/sh", "/tmp/resize2fs.sh", "' + fsys.device + '");')
 
   if not OPTIONS.no_supersu_system or not OPTIONS.no_preserve_themes or OPTIONS.backuptool:
     # Mount /system
@@ -2153,6 +2172,8 @@ def main(argv):
       OPTIONS.no_supersu_system = True
     elif o in ("--no_preserve_themes"):
       OPTIONS.no_preserve_themes = True
+    elif o in ("--resize_system"):
+      OPTIONS.resize_system = bool(a.lower() == 'true')
     else:
       return False
     return True
@@ -2189,7 +2210,8 @@ def main(argv):
                                  "no_separate_recovery=",
                                  "custom_recovery_partition=",
                                  "no_supersu_system",
-                                 "no_preserve_themes"
+                                 "no_preserve_themes",
+                                 "resize_system="
                              ], extra_option_handler=option_handler)
 
   if len(args) != 2:
