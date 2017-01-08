@@ -792,7 +792,9 @@ e2fsck -fy $1
 
   # gapps-config
   script.Print('*** gapps-config.txt   ***')
-  common.ZipWriteStr(output_zip, "gapps-config.txt", "PackageInstallerGoogle")
+  common.ZipWriteStr(output_zip, "gapps-config.txt", '''PackageInstallerGoogle
++Launcher
+''')
   script.AppendExtra('run_program("/sbin/mkdir", "-p", "/persist");')
   script.AppendExtra('package_extract_file("gapps-config.txt", "/persist/gapps-config.txt");')
 
