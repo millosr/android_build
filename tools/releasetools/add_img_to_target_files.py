@@ -311,7 +311,8 @@ def AddImagesToTargetFiles(filename):
   output_zip = zipfile.ZipFile(filename, "a",
                                compression=zipfile.ZIP_DEFLATED)
 
-  has_recovery = (OPTIONS.info_dict.get("no_recovery") != "true")
+#  has_recovery = (OPTIONS.info_dict.get("no_recovery") != "true")
+  has_recovery = False
 
   def banner(s):
     print "\n\n++++ " + s + " ++++\n\n"
