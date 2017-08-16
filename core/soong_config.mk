@@ -84,6 +84,7 @@ $(SOONG_VARIABLES): FORCE
 	echo '    "Override_rs_driver": "$(OVERRIDE_RS_DRIVER)",'; \
 	echo '    "Treble": $(if $(filter true,$(PRODUCT_FULL_TREBLE)),true,false),'; \
 	echo '    "Pdk": $(if $(filter true,$(TARGET_BUILD_PDK)),true,false),'; \
+	echo '    "Libart_img_base": "$(LIBART_IMG_BASE)",'; \
 	echo '    "Legacy_blob_compatible": $(if $(filter true,$(TARGET_LEGACY_BLOB_COMPATIBLE)),true,false),'; \
 	echo '    "Has_legacy_camera_hal1": $(if $(filter true,$(TARGET_HAS_LEGACY_CAMERA_HAL1)),true,false),'; \
 	echo '    "Uses_media_extensions": $(if $(filter true,$(TARGET_USES_MEDIA_EXTENSIONS)),true,false),'; \
