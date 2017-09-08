@@ -68,6 +68,7 @@ $(SOONG_VARIABLES): FORCE
 	echo '    "EnableCFI": $(if $(filter true,$(ENABLE_CFI)),true,false),'; \
 	echo '    "Treble": $(if $(filter true,$(PRODUCT_FULL_TREBLE)),true,false),'; \
 	echo '    "Override_rs_driver": "$(OVERRIDE_RS_DRIVER)",'; \
+	echo '    "Legacy_blob_compatible": $(if $(filter true,$(TARGET_LEGACY_BLOB_COMPATIBLE)),true,false),'; \
 	echo ''; \
 	echo '    "ArtUseReadBarrier": $(if $(filter false,$(PRODUCT_ART_USE_READ_BARRIER)),false,true),'; \
 	echo ''; \
