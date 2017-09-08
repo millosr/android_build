@@ -81,6 +81,7 @@ LOCAL_CLANG_EXCEPTION_PROJECTS = \
   vendor/huawei/angler/ \
   vendor/lge/bullhead/ \
   external/openssl_legacy/ \
+  external/stlport/ \
   $(INTERNAL_LOCAL_CLANG_EXCEPTION_PROJECTS)
 
 # Find $1 in the exception project list.
