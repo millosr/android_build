@@ -2629,6 +2629,7 @@ ifeq ($(build_ota_package),true)
 # -----------------------------------------------------------------
 # OTA update package
 
+ifndef BOARD_CUSTOM_OTA_MK
 name := $(TARGET_PRODUCT)
 ifeq ($(TARGET_BUILD_TYPE),debug)
   name := $(name)_debug
@@ -2672,14 +2673,22 @@ $(INTERNAL_OTA_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE) \
 	   --backup=$(backuptool) \
 	   $(if $(OEM_OTA_CONFIG), -o $(OEM_OTA_CONFIG)) \
 	   $(BUILT_TARGET_FILES_PACKAGE) $@
+else
+include $(BOARD_CUSTOM_OTA_MK)
+endif
 
 .PHONY: otapackage
 
+ifndef BOARD_CUSTOM_OTA_MK
 TARGET_ROM_PACKAGE := $(PRODUCT_OUT)/aosp-$(PLATFORM_VERSION)-$(shell date +%Y%m%d)-$(TARGET_DEVICE)-$(USER).zip
 otapackage: $(INTERNAL_OTA_PACKAGE_TARGET)
 	   $(hide) ln -f $(INTERNAL_OTA_PACKAGE_TARGET) $(TARGET_ROM_PACKAGE)
 	   $(hide) $(MD5SUM) $(TARGET_ROM_PACKAGE) > $(TARGET_ROM_PACKAGE).md5sum
 	   @echo "OTA Package: " $(TARGET_ROM_PACKAGE) >&2
+
+else
+otapackage: $(INTERNAL_OTA_PACKAGE_TARGET)
+endif    # BOARD_CUSTOM_OTA_MK
 
 endif    # build_ota_package
 
