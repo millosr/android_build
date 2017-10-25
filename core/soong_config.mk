@@ -90,6 +90,7 @@ $(SOONG_VARIABLES): FORCE
 	echo '    "Uses_media_extensions": $(if $(filter true,$(TARGET_USES_MEDIA_EXTENSIONS)),true,false),'; \
 	echo '    "Needs_text_relocations": $(if $(filter true,$(TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS)),true,false),'; \
 	echo '    "Has_fmradio_bcm": $(if $(filter true,$(TARGET_HAS_FMRADIO_BCM)),true,false),'; \
+	echo '    "Qcom_bsp_legacy":  $(if $(filter msm7x27a msm7x30 msm8660 msm8960,$(TARGET_BOARD_PLATFORM)),true,false),';  \
 	echo ''; \
 	echo '    "ArtUseReadBarrier": $(if $(filter false,$(PRODUCT_ART_USE_READ_BARRIER)),false,true),'; \
 	echo ''; \
