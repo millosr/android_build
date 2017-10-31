@@ -87,6 +87,7 @@ $(SOONG_VARIABLES): FORCE
 	echo '    "Legacy_blob_compatible": $(if $(filter true,$(TARGET_LEGACY_BLOB_COMPATIBLE)),true,false),'; \
 	echo '    "Has_legacy_camera_hal1": $(if $(filter true,$(TARGET_HAS_LEGACY_CAMERA_HAL1)),true,false),'; \
 	echo '    "Uses_media_extensions": $(if $(filter true,$(TARGET_USES_MEDIA_EXTENSIONS)),true,false),'; \
+	echo '    "Has_fmradio_bcm": $(if $(filter true,$(TARGET_HAS_FMRADIO_BCM)),true,false),'; \
 	echo ''; \
 	echo '    "ArtUseReadBarrier": $(if $(filter false,$(PRODUCT_ART_USE_READ_BARRIER)),false,true),'; \
 	echo ''; \
