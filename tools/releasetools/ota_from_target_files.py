@@ -137,6 +137,18 @@ Usage:  ota_from_target_files [flags] input_target_files output_ota_package
   --backup <boolean>
       Enable or disable the execution of backuptool.sh.
       Disabled by default.
+
+  --no_separate_recovery <boolean>
+      Do not generate recovery image. For devices which do not have a truly
+      separate recovery partition.
+
+  --custom_recovery_partition <block device>
+      Permit to set a FOTA partition that will be used to flash the recovery
+      when no_separate_recovery is used. (mainly for devices with a possible
+      alternative to recovery like fota partition)
+
+  --resize_system <bool>
+      Resize /system just after the flash of the image for those with bigger /system fs.
 """
 
 from __future__ import print_function
@@ -191,6 +203,9 @@ OPTIONS.extracted_input = None
 OPTIONS.key_passwords = []
 OPTIONS.override_device = 'auto'
 OPTIONS.backuptool = False
+OPTIONS.no_separate_recovery = False
+OPTIONS.custom_recovery_partition = None
+OPTIONS.resize_system = False
 
 METADATA_NAME = 'META-INF/com/android/metadata'
 UNZIP_PATTERN = ['IMAGES/*', 'META/*']
@@ -427,9 +442,9 @@ def WriteFullOTAPackage(input_zip, output_zip):
 
   metadata["ota-type"] = "BLOCK"
 
-  #ts = GetBuildProp("ro.build.date.utc", OPTIONS.info_dict)
-  #ts_text = GetBuildProp("ro.build.date", OPTIONS.info_dict)
-  #script.AssertOlderBuild(ts, ts_text)
+  # ts = GetBuildProp("ro.build.date.utc", OPTIONS.info_dict)
+  # ts_text = GetBuildProp("ro.build.date", OPTIONS.info_dict)
+  # script.AssertOlderBuild(ts, ts_text)
 
   AppendAssertions(script, OPTIONS.info_dict, oem_dicts)
   device_specific.FullOTA_Assertions()
@@ -512,6 +527,12 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
 
   script.ShowProgress(system_progress, 0)
 
+  script.Print('**************************')
+  script.Print('***     nAOSP ROM      ***')
+  script.Print('**************************')
+
+  script.Print('*** Flashing nAOSP ROM ***')
+
   # Full OTA is done as an "incremental" against an empty source image. This
   # has the effect of writing new data from the package to the entire
   # partition, but lets us reuse the updater code that writes incrementals to
@@ -523,6 +544,21 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
 
   boot_img = common.GetBootableImage(
       "boot.img", "boot.img", OPTIONS.input_tmp, "BOOT")
+
+  if OPTIONS.resize_system:
+    fsys = OPTIONS.info_dict["fstab"]["/system"]
+    if fsys.fs_type in ("ext2", "ext3", "ext4"):
+      # resize system (improve it to support other fs)
+      script.Print('*** Resize /system     ***')
+      common.ZipWriteStr(output_zip, "resize2fs.sh", '''#!/sbin/sh
+
+e2fsck -fy $1 &&
+resize2fs $1 &&
+e2fsck -fy $1
+
+''')
+      script.AppendExtra('package_extract_file("resize2fs.sh", "/tmp/resize2fs.sh");')
+      script.AppendExtra('run_program("/sbin/sh", "/tmp/resize2fs.sh", "' + fsys.device + '");')
 
   if HasVendorPartition(input_zip):
     script.ShowProgress(0.1, 0)
@@ -542,7 +578,13 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
     script.Unmount("/system")
 
   script.ShowProgress(0.05, 5)
+  script.Print('*** Flashing boot      ***')
   script.WriteRawImage("/boot", "boot.img")
+
+  if OPTIONS.no_separate_recovery and OPTIONS.custom_recovery_partition is not None:
+    common.ZipWriteStr(output_zip, "recovery.img", recovery_img.data)
+    script.Print('*** Flashing Recovery  ***')
+    script.AppendExtra('package_extract_file("recovery.img", "' + OPTIONS.custom_recovery_partition + '");')
 
   script.ShowProgress(0.2, 10)
   device_specific.FullOTA_InstallEnd()
@@ -681,7 +723,8 @@ def WriteBlockIncrementalOTAPackage(target_zip, source_zip, output_zip):
   updating_boot = (not OPTIONS.two_step and
                    (source_boot.data != target_boot.data))
 
-  target_recovery = common.GetBootableImage(
+  if not OPTIONS.no_separate_recovery:
+    target_recovery = common.GetBootableImage(
       "/tmp/recovery.img", "recovery.img", OPTIONS.target_tmp, "RECOVERY")
 
   system_src = GetImage("system", OPTIONS.source_tmp)
@@ -974,14 +1017,15 @@ def WriteVerifyPackage(input_zip, output_zip):
       boot_type, boot_device, boot_img.size, boot_img.sha1))
   script.AppendExtra("")
 
-  script.Print("Verifying recovery...")
-  recovery_img = common.GetBootableImage(
+  if not OPTIONS.no_separate_recovery:
+    script.Print("Verifying recovery...")
+    recovery_img = common.GetBootableImage(
       "recovery.img", "recovery.img", OPTIONS.input_tmp, "RECOVERY")
-  recovery_type, recovery_device = common.GetTypeAndDevice(
+    recovery_type, recovery_device = common.GetTypeAndDevice(
       "/recovery", OPTIONS.info_dict)
-  script.Verify("%s:%s:%d:%s" % (
+    script.Verify("%s:%s:%d:%s" % (
       recovery_type, recovery_device, recovery_img.size, recovery_img.sha1))
-  script.AppendExtra("")
+    script.AppendExtra("")
 
   system_tgt = GetImage("system", OPTIONS.input_tmp)
   system_tgt.ResetFileMap()
@@ -1366,6 +1410,12 @@ def main(argv):
       OPTIONS.override_device = a
     elif o in ("--backup"):
       OPTIONS.backuptool = bool(a.lower() == 'true')
+    elif o in ("--no_separate_recovery"):
+      OPTIONS.no_separate_recovery = bool(a.lower() == 'true')
+    elif o in ("--custom_recovery_partition"):
+      OPTIONS.custom_recovery_partition = a
+    elif o in ("--resize_system"):
+      OPTIONS.resize_system = bool(a.lower() == 'true')
     else:
       return False
     return True
@@ -1399,6 +1449,9 @@ def main(argv):
                                  "extracted_input_target_files=",
                                  "override_device=",
                                  "backup=",
+                                 "no_separate_recovery=",
+                                 "custom_recovery_partition=",
+                                 "resize_system="
                              ], extra_option_handler=option_handler)
 
   if len(args) != 2:
