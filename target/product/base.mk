@@ -126,7 +126,6 @@ PRODUCT_PACKAGES += \
     svc \
     tc \
     telecom \
-    ThemeInterfacer \
     vdc \
     vold \
     wm
